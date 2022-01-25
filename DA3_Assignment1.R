@@ -1,0 +1,469 @@
+
+# Loading the data
+
+rm(list = ls())
+
+library(tidyverse)
+library(caret)
+library(skimr)
+library(grid)
+library(glmnet)
+library(cowplot)
+library(modelsummary)
+library(fixest)
+library(data.table)
+
+data <- read_csv("https://osf.io/4ay9x/download")
+
+## Data Cleaning &
+
+## filtering for the occupation of Education administrators 0230
+## for this assingment i'm only taking into consideration the full time employees
+## with minimum of 40 hours of work in a week.
+## The age is filtered for the people between 18 and 60 years old.
+
+df <- data %>% filter(occ2012 == 0230 & uhours >= 40 & age >= 18 & age <= 60)
+
+## creating the new variable of earnings per hour
+
+df <- mutate(df, eph = earnwke/uhours)
+
+## checking for NA's in the data
+
+to_filter <- sapply(df, function(x) sum(is.na(x)))
+to_filter
+
+## As the ethnic variable contains 733 NA's out of 784 observations
+## I'll drop it
+
+df$ethnic <- NULL
+
+## As the variable of unioncov has 136 NA's, i decide to make a 
+## flag variable for it
+
+df <- df %>% 
+  mutate(
+    flag_unioncov = ifelse(is.na(unioncov),1,0))
+
+glimpse(df)
+
+## Checking the distributions for the numeric variables
+
+df %>%
+  keep(is.numeric) %>% 
+  gather() %>% 
+  ggplot(aes(value)) +
+  theme_bw()+
+  facet_wrap(~key, scales = "free") +
+  geom_histogram()
+
+
+## dropping the extra variables
+
+# ..1
+df <- df %>%
+  select(-c(1))
+
+# hhid
+df <- df %>%
+  select(-c(hhid))
+
+# intmonth
+df <- df %>%
+  select(-c(intmonth))
+
+# stfips
+
+datasummary( eph*factor(stfips) ~ N + SD + Percent() + Mean, data = df )
+
+## grouping the regions into 4 sub-regions
+
+## converting dataframe to datatable
+
+df <- data.table(df)
+
+## assigning variables to states column
+
+df <- df[stfips %in% c("WA", "OR", "MT", "ID", "WY", "NV", "UT", "CO", "AZ", "NM", "HI", "AK", "CA"), region := "west"]
+df <- df[stfips %in% c("ND", "SD", "NE", "KS", "MN", "IA", "MO", "WI", "IL", "IN", "MI", "OH"), region := "mid-west"]
+df <- df[stfips %in% c("OK", "TX", "AR", "LA", "KY", "TN", "MS", "AL", "WV", "VA", "NC", "SC", "GA", "FL", "DC","MD","DE"), region := "south"]
+df <- df[stfips %in% c("PA", "NY", "VT", "NH", "ME","MA","RI","CT","NJ"), region := "north-east"]
+
+## dropping the original states column
+
+df <- df %>% 
+  select(-c(stfips))
+
+# weight
+
+ggplot(df,aes(weight,eph))+geom_point()+geom_smooth(method="loess")
+
+## dropping weights column
+
+df <- df %>%
+  select(-c(weight))
+
+# grade92
+
+datasummary( eph*factor(grade92) ~ N + SD + Percent() + Mean, data = df )
+
+## assigning dummy variables to the field
+
+df <- df %>% mutate(education = case_when(
+  grade92 <= 42 ~ "No Degree",
+  grade92 == 43 ~ "Bsc",
+  grade92 == 44 ~ "Msc",
+  grade92 == 45 ~ "Professional Degree",
+  grade92 == 46 ~ "Doctorate Degree" 
+))
+
+## Making education a factor
+
+df$education <- factor(df$education)
+
+## renaming grade92
+
+df <- df %>% 
+  select(-c(grade92))
+
+## race
+
+datasummary( ephr*factor(race) ~ N + SD +Percent() + Mean, data = df )
+
+## Assigning binary variable to race
+## for white and non-white
+
+df <- df %>% mutate(race = case_when(
+  race == 1 ~ "White",
+  race > 1 ~ "Non White"
+))
+
+## Making race a factor
+
+df$race <- factor(df$race)
+
+
+# age (ask aftab)
+
+datasummary( eph*factor(age) ~ N + Percent() + Mean, data = df )
+ggplot(df, aes(x=age, y=eph)) +
+  geom_point() +
+  geom_smooth(method="loess")
+
+# sex
+
+datasummary( eph*factor(sex) ~ N + Percent() + Mean, data = df )
+
+## assigning values to sex variable
+
+df <- df %>% mutate(sex = case_when(
+  sex == 1 ~ "Male",
+  TRUE ~ "Female"
+))
+
+# include as factor
+
+df$sex <- factor(df$sex)
+
+# marital
+
+datasummary( eph*factor(marital) ~ N +SD + Percent() + Mean, data = df )
+
+## creating dummy variables for marital status
+
+df <- df %>% mutate(marital=case_when(
+  marital==1 ~ "Married",
+  marital==7 ~ "Never married",
+  TRUE ~ "Used to be married"
+))
+
+## converting to factor
+
+df$marital <- factor(df$marital)
+
+## own child
+
+datasummary( eph*factor(ownchild) ~ N + SD + Mean, data = df ) 
+
+## creating dummy variables
+
+df <- df %>% mutate(ownchild = case_when(
+  ownchild == 0 ~ 0,
+  TRUE ~ 1
+))
+
+# chldpres
+## Dropping it as its same as ownchild
+
+df <- df %>% 
+  select(-c(chldpres))
+
+# ind02 (ask aftab)
+
+datasummary( eph*factor(ind02) ~ N + Percent() + Mean, data = df ) 
+
+## assinging values to ind02 variable
+
+df <- df %>% mutate(industry = case_when(
+  ind02 == "Elementary and secondary schools (6111)" ~ "school",
+  ind02 == "Colleges and universities, including junior colleges (6112, 6113)" ~ "university",
+  TRUE ~ "others"
+))
+
+## dropping the ind02 variable
+
+df <- df %>% 
+  select(-c(ind02))
+
+# class
+
+datasummary( eph*factor(class) ~ N + Percent() + Mean, data = df ) 
+
+## assigning values to class variable
+
+df <- df[class == "Government - Federal"| class=="Government - Local"|class=="Government - State", Sector := "Government"]
+df <- df[class == "Private, For Profit"| class=="Private, Nonprofit", Sector := "Private"]
+
+## dropping the class variable
+
+df <- df %>% 
+  select(-c(class))
+
+## taking it as a factor
+
+df$Sector <- factor(df$Sector)
+
+## unionmme
+
+
+## unioncov
+
+# lfsr94 
+
+datasummary( eph*factor(lfsr94) ~ N + Percent() + Mean, data = df ) 
+
+## no major difference between both the categories so decided to drop
+## the variable
+
+df <- df %>% 
+  select(-c(lfsr94))
+
+## prcitship
+
+datasummary( eph*factor(prcitshp) ~ N + Percent() + Mean, data = df ) 
+
+## assigning dummy values to the variable
+
+df <- df[prcitshp=="Native, Born Abroad Of US Parent(s)"|prcitshp=="Native, Born in PR or US Outlying Area"|prcitshp=="Native, Born In US",origin := "Native"]
+df <- df[prcitshp=="Foreign Born, Not a US Citizen"|prcitshp=="Foreign Born, US Cit By Naturalization",origin := "Foreign "]
+
+## dropping the prcitshp variable
+
+df <- df %>% 
+  select(-c(prcitshp))
+
+## occ2012 
+
+## dropping it as its the occupation selected
+
+df <- df %>% 
+  select(-c(occ2012))
+
+## dropping state column as already accounted for in region
+
+df <- df %>% 
+  select(-c(state))
+
+## dropping earnwke and uhours as already accounted for in eph
+
+df <- df %>% 
+  select(-c(earnwke,uhours))
+
+############################################
+## Checking for the interaction terms ##
+###########################################
+
+# race and sex with eph
+
+datasummary( eph*factor(race)*sex ~ N + Percent() + Mean, data = df ) 
+
+# Boxplot
+
+race_sex <- ggplot(df, aes(x = factor(race), y = eph,
+                           fill = factor(sex), color=factor(sex))) +
+  geom_boxplot(alpha=0.8, na.rm=T, outlier.shape = NA, width = 0.8) +
+  stat_boxplot(geom = "errorbar", width = 0.8, size = 0.3, na.rm=T)+
+  scale_color_manual(name="",
+                     values=c('red','blue')) +
+  scale_fill_manual(name="",
+                    values=c('red','blue')) +
+  labs(x = "Race",y = "Wage per Hour (USD)")+
+  scale_y_continuous(expand = c(0.01,0.01), limits=c(0, 70), breaks = seq(0,70, 10))+
+  ggthemes::theme_economist() +
+  theme(legend.position = c(0.15,0.85), axis.text.x = element_text(angle=45, vjust=.5))
+
+# education and sex with eph
+
+datasummary( eph*factor(education)*sex ~ N + Percent() + Mean, data = df )
+
+## wage is different based on education and gender
+
+## Boxplot##
+
+education_sex <- ggplot(df, aes(x = factor(education), y = eph,
+                                fill = factor(sex), color=factor(sex))) +
+  geom_boxplot(alpha=0.8, na.rm=T, outlier.shape = NA, width = 0.8) +
+  stat_boxplot(geom = "errorbar", width = 0.8, size = 0.3, na.rm=T)+
+  scale_color_manual(name="",
+                     values=c('red','blue')) +
+  scale_fill_manual(name="",
+                    values=c('red','blue')) +
+  labs(x = "Education",y = "Wage per Hour (USD)")+
+  scale_y_continuous(expand = c(0.01,0.01), limits=c(0, 70), breaks = seq(0,70, 10))+
+  ggthemes::theme_economist() +
+  theme(legend.position = c(0.15,0.85), axis.text.x = element_text(angle=45, vjust=.5))
+
+# marital status and sex with wage
+
+datasummary( eph*marital*sex ~ N + Percent() + Mean, data = df )
+
+## Boxplot##
+
+marital_sex <- ggplot(df, aes(x = factor(marital), y = eph,
+                              fill = factor(sex), color=factor(sex))) +
+  geom_boxplot(alpha=0.8, na.rm=T, outlier.shape = NA, width = 0.8) +
+  stat_boxplot(geom = "errorbar", width = 0.8, size = 0.3, na.rm=T)+
+  scale_color_manual(name="",
+                     values=c('red','blue')) +
+  scale_fill_manual(name="",
+                    values=c('red','blue')) +
+  labs(x = "Married status",y = "Wage per Hour (USD)")+
+  scale_y_continuous(expand = c(0.01,0.01), limits=c(0, 70), breaks = seq(0,70, 10))+
+  ggthemes::theme_economist() +
+  theme(legend.position = c(0.15,0.85), axis.text.x = element_text(angle=45, vjust=.5))
+
+# sector and sex with wage
+
+datasummary( eph*Sector*sex ~ N + Percent() + Mean, data = df )
+
+## wages are different based on sector and sex
+
+## Boxplot##
+
+Sector_sex <- ggplot(df, aes(x = factor(Sector), y = eph,
+                             fill = factor(sex), color=factor(sex))) +
+  geom_boxplot(alpha=0.8, na.rm=T, outlier.shape = NA, width = 0.8) +
+  stat_boxplot(geom = "errorbar", width = 0.8, size = 0.3, na.rm=T)+
+  scale_color_manual(name="",
+                     values=c('red','blue')) +
+  scale_fill_manual(name="",
+                    values=c('red','blue')) +
+  labs(x = "Sector",y = "Wage per Hour (USD)")+
+  scale_y_continuous(expand = c(0.01,0.01), limits=c(0, 70), breaks = seq(0,70, 10))+
+  ggthemes::theme_economist() +
+  theme(legend.position = c(0.15,0.85), axis.text.x = element_text(angle=45, vjust=.5))
+
+## origin and sector with wage
+
+datasummary( eph*origin*Sector ~ N + Percent() + Mean, data = df )
+
+## wages are different based on origin and sector
+
+origin_sector <- ggplot(df, aes(x = factor(origin), y = eph,
+                                fill = factor(Sector), color=factor(Sector))) +
+  geom_boxplot(alpha=0.8, na.rm=T, outlier.shape = NA, width = 0.8) +
+  stat_boxplot(geom = "errorbar", width = 0.8, size = 0.3, na.rm=T)+
+  scale_color_manual(name="",
+                     values=c('red','blue')) +
+  scale_fill_manual(name="",
+                    values=c('red','blue')) +
+  labs(x = "Origin",y = "Wage per Hour (USD)")+
+  scale_y_continuous(expand = c(0.01,0.01), limits=c(0, 70), breaks = seq(0,70, 10))+
+  ggthemes::theme_economist() +
+  theme(legend.position = c(0.15,0.85), axis.text.x = element_text(angle=45, vjust=.5))
+
+## sector and region with wage
+
+datasummary(eph*Sector*region ~ N + Percent() + Mean, data = df)
+
+## wages are different based on region and sector
+
+## Boxplot##
+
+Sector_Region<- ggplot(df, aes(x = factor(region), y = eph,
+                               fill = factor(Sector), color=factor(Sector))) +
+  geom_boxplot(alpha=0.8, na.rm=T, outlier.shape = NA, width = 0.8) +
+  stat_boxplot(geom = "errorbar", width = 0.8, size = 0.3, na.rm=T)+
+  scale_color_manual(name="",
+                     values=c('red','blue')) +
+  scale_fill_manual(name="",
+                    values=c('red','blue')) +
+  labs(x = "Region",y = "Wage per Hour (USD)")+
+  scale_y_continuous(expand = c(0.01,0.01), limits=c(0, 70), breaks = seq(0,70, 10))+
+  ggthemes::theme_economist() +
+  theme(legend.position = c(0.15,0.85), axis.text.x = element_text(angle=45, vjust=.5))
+
+## race and marital status with wages
+
+datasummary(eph*factor(race)*factor(marital)  ~ N + Percent() + Mean, data = df )
+
+## Boxplot
+
+race_marital<- ggplot(df, aes(x = factor(marital), y = eph,
+                              fill = factor(race), color=factor(race))) +
+  geom_boxplot(alpha=0.8, na.rm=T, outlier.shape = NA, width = 0.8) +
+  stat_boxplot(geom = "errorbar", width = 0.8, size = 0.3, na.rm=T)+
+  scale_color_manual(name="",
+                     values=c('red','blue')) +
+  scale_fill_manual(name="",
+                    values=c('red','blue')) +
+  labs(x = "Marriage Status",y = "Wage per Hour (USD)")+
+  scale_y_continuous(expand = c(0.01,0.01), limits=c(0, 70), breaks = seq(0,70, 10))+
+  ggthemes::theme_economist() +
+  theme(legend.position = c(0.15,0.85), axis.text.x = element_text(angle=45, vjust=.5))
+
+## education and region with wage
+
+datasummary(eph*factor(education)*region  ~ N + Percent() + Mean, data = df )
+
+## wages are different based on region and education
+
+## Boxplot
+
+education_region<- ggplot(df, aes(x = factor(education), y = eph,
+                                  fill = factor(region), color=factor(region))) +
+  geom_boxplot(alpha=0.8, na.rm=T, outlier.shape = NA, width = 0.8) +
+  stat_boxplot(geom = "errorbar", width = 0.8, size = 0.3, na.rm=T)+
+  scale_color_manual(name="",
+                     values=c('red','blue')) +
+  scale_fill_manual(name="",
+                    values=c('red','blue')) +
+  labs(x = "Region",y = "Wage per Hour (USD)")+
+  scale_y_continuous(expand = c(0.01,0.01), limits=c(0, 70), breaks = seq(0,70, 10))+
+  ggthemes::theme_economist() +
+  theme(legend.position = c(0.15,0.85), axis.text.x = element_text(angle=45, vjust=.5))
+
+## origin and education with wages
+
+datasummary(eph*origin*factor(education)  ~ N + Percent() + Mean, data = df) 
+
+## wages are different based on origin and education
+
+## Box plot
+
+education_origin<- ggplot(df, aes(x = factor(education), y = eph,
+                                  fill = factor(origin), color=factor(origin))) +
+  geom_boxplot(alpha=0.8, na.rm=T, outlier.shape = NA, width = 0.8) +
+  stat_boxplot(geom = "errorbar", width = 0.8, size = 0.3, na.rm=T)+
+  scale_color_manual(name="",
+                     values=c('red','blue')) +
+  scale_fill_manual(name="",
+                    values=c('red','blue')) +
+  labs(x = "education",y = "Wage per Hour (USD)")+
+  scale_y_continuous(expand = c(0.01,0.01), limits=c(0, 70), breaks = seq(0,70, 10))+
+  ggthemes::theme_economist() +
+  theme(legend.position = c(0.15,0.85), axis.text.x = element_text(angle=45, vjust=.5))
+
+## children and sex with wages
+
+datasummary(eph*factor(ownchild)*factor(sex) ~ N + Percent() + Mean, data = df )
