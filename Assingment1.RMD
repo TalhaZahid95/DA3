@@ -1,0 +1,775 @@
+---
+title: "DA3_Assingment1"
+author: "Muhammad Talha Zahid"
+date: "1/26/2022"
+output: pdf_document
+---
+```{r,echo=FALSE, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+## Introduction
+
+The purpose of this assingment was to create a predictive model for the hourly wage of the employees in [Occupational Earning dataset](https://osf.io/4ay9x/download).In this assignment we will be focusing on *educational administrators* who fall in the age bracket of *18-60 years* and work a minimum of *40 hours* in a week. The final data consisted of 784 observations.
+
+```{r,echo=FALSE, include=FALSE}
+# Loading the data
+
+rm(list = ls())
+
+library(tidyverse)
+library(lspline)
+library(cowplot)
+library(boot)
+library(estimatr)
+library(huxtable)
+library(stargazer)
+library(modelsummary)
+library(kableExtra)
+library(dplyr)
+library(data.table)
+library(fixest)
+library(caret)
+library(skimr)
+library(grid)
+library(glmnet)
+library(gridExtra)
+#install.packages("ggpubr")
+library(ggpubr)
+
+data <- read_csv("https://osf.io/4ay9x/download")
+```
+
+## Data Munging & Cleaning
+Categorical variables were created for state, grade92, marital status, ownchild, ind02, class, and prcitship. These variables were further converted to factor, so they can be used for the purpose of our analysis. For the age variable loess ( Exhibit 1 ) was made to see the pattern which showed a concave pattern of association so i decided to approximate the relation with quadratic function. The next stage in the process of data cleaning was to drop the irrelevant columns (either for which we made new categorical variables or were just irrelevant for our analysis). After this step we are left with 784 observations and 13 variables.
+
+```{r,echo=FALSE, include=FALSE}
+## Data Cleaning &
+
+## filtering for the occupation of Education administrators 0230
+## for this assingment i'm only taking into consideration the full time employees
+## with minimum of 40 hours of work in a week.
+## The age is filtered for the people between 18 and 60 years old.
+
+
+df <- data %>% filter(occ2012 == 0230 & uhours >= 40 & age >= 18 & age <= 60)
+
+## creating the new variable of earnings per hour
+
+df <- mutate(df, eph = earnwke/uhours)
+
+
+## Checking the distributions for the numeric variables
+
+figure1 <- df %>%
+ keep(is.numeric) %>% 
+  gather() %>% 
+  ggplot(aes(value)) +
+  theme_bw()+
+  facet_wrap(~key, scales = "free") +
+  geom_histogram()
+
+
+## dropping the extra variables
+## checking for NA's in the data
+
+to_filter <- sapply(df, function(x) sum(is.na(x)))
+to_filter
+
+## As the ethnic variable contains 733 NA's out of 784 observations
+## I''ll check the distribution
+
+# ethnic
+
+datasummary( eph*factor(ethnic) ~ N + Percent() + Mean, data = df )
+
+# manage missing: set as factors
+
+df$ethnic<- fct_explicit_na(factor(df$ethnic), na_level = "Missing")
+
+# 90% values are missing creating flag variable to check
+
+df <- df %>% mutate(ethnic_missing=case_when(
+  ethnic=="Missing" ~ 1,
+  TRUE ~ 0
+))
+
+## checking the results
+
+datasummary( eph*factor(ethnic_missing) ~ N + Percent() + Mean, data = df )
+
+## the difference between mean per hour wage is high but the difference in 
+## number of observations is higher so i decided to drop this variable.
+
+df <- df %>%
+  select(-c(ethnic, ethnic_missing)) 
+
+# ..1
+df <- df %>%
+  select(-c(1))
+
+# hhid
+df <- df %>%
+  select(-c(hhid))
+
+# intmonth
+df <- df %>%
+  select(-c(intmonth))
+
+# stfips
+
+datasummary( eph*factor(stfips) ~ N + SD + Percent() + Mean, data = df )
+
+## grouping the regions into 4 sub-regions
+
+## converting dataframe to datatable
+
+df <- data.table(df)
+
+## assigning variables to states column
+
+df <- df[stfips %in% c("WA", "OR", "MT", "ID", "WY", "NV", "UT", "CO", "AZ", "NM", "HI", "AK", "CA"), region := "west"]
+df <- df[stfips %in% c("ND", "SD", "NE", "KS", "MN", "IA", "MO", "WI", "IL", "IN", "MI", "OH"), region := "mid-west"]
+df <- df[stfips %in% c("OK", "TX", "AR", "LA", "KY", "TN", "MS", "AL", "WV", "VA", "NC", "SC", "GA", "FL", "DC","MD","DE"), region := "south"]
+df <- df[stfips %in% c("PA", "NY", "VT", "NH", "ME","MA","RI","CT","NJ"), region := "north-east"]
+
+## dropping the original states column
+
+df <- df %>% 
+  select(-c(stfips))
+
+## converting region to factor
+
+df$region <- factor(df$region)
+
+# weight
+
+ggplot(df,aes(weight,eph))+geom_point()+geom_smooth(method="loess")
+
+## dropping weights column
+
+df <- df %>%
+  select(-c(weight))
+
+# grade92
+
+datasummary( eph*factor(grade92) ~ N + SD + Percent() + Mean, data = df )
+
+## assigning dummy variables to the field
+
+df <- df %>% mutate(education = case_when(
+  grade92 <= 42 ~ "No Degree",
+  grade92 == 43 ~ "Bsc",
+  grade92 == 44 ~ "Msc",
+  grade92 == 45 ~ "Professional Degree",
+  grade92 == 46 ~ "Doctorate Degree" 
+))
+
+## Making education a factor
+
+df$education <- factor(df$education)
+
+## renaming grade92
+
+df <- df %>% 
+  select(-c(grade92))
+
+## race
+
+datasummary( eph*factor(race) ~ N + SD +Percent() + Mean, data = df )
+
+## Assigning binary variable to race
+## for white and non-white
+
+df <- df %>% mutate(race = case_when(
+  race == 1 ~ "White",
+  race > 1 ~ "Non White"
+))
+
+## Making race a factor
+
+df$race <- factor(df$race)
+
+
+# age 
+
+## checking the lowess for age
+
+datasummary( eph*factor(age) ~ N + Percent() + Mean, data = df )
+figure2 <-  ggplot(df, aes(x=age, y=eph)) +
+    geom_point() +
+    geom_smooth(method="loess")
+  
+## creating age-squared column
+
+df <- df[, agesq := age^2]
+
+# sex
+
+datasummary( eph*factor(sex) ~ N + Percent() + Mean, data = df )
+
+## assigning values to sex variable
+
+df <- df %>% mutate(sex = case_when(
+  sex == 1 ~ "Male",
+  TRUE ~ "Female"
+))
+
+# include as factor
+
+df$sex <- factor(df$sex)
+
+# marital
+
+datasummary( eph*factor(marital) ~ N +SD + Percent() + Mean, data = df )
+
+## creating dummy variables for marital status
+
+df <- df %>% mutate(marital=case_when(
+  marital==1 ~ "Married",
+  marital==7 ~ "Never married",
+  TRUE ~ "Used to be married"
+))
+
+## converting to factor
+
+df$marital <- factor(df$marital)
+
+## own child
+
+datasummary( eph*factor(ownchild) ~ N + SD + Mean, data = df ) 
+
+## creating dummy variables
+
+df <- df %>% mutate(ownchild = case_when(
+  ownchild == 0 ~ 0,
+  TRUE ~ 1
+))
+
+## converting to factor
+
+df$ownchild <- factor(df$ownchild)
+
+# chldpres
+## Dropping it as its same as ownchild
+
+df <- df %>% 
+  select(-c(chldpres))
+
+# ind02 
+
+datasummary( eph*factor(ind02) ~ N + Percent() + Mean, data = df ) 
+
+## assinging values to ind02 variable
+
+df <- df %>% mutate(industry = case_when(
+  ind02 == "Elementary and secondary schools (6111)" ~ "school",
+  ind02 == "Colleges and universities, including junior colleges (6112, 6113)" ~ "university",
+  TRUE ~ "others"
+))
+
+## converting industry to factor
+
+df$industry <- factor(df$industry)
+
+## dropping the ind02 variable
+
+df <- df %>% 
+  select(-c(ind02))
+
+# class
+
+datasummary( eph*factor(class) ~ N + Percent() + Mean, data = df ) 
+
+## assigning values to class variable
+
+df <- df[class == "Government - Federal"| class=="Government - Local"|class=="Government - State", Sector := "Government"]
+df <- df[class == "Private, For Profit"| class=="Private, Nonprofit", Sector := "Private"]
+
+## dropping the class variable
+
+df <- df %>% 
+  select(-c(class))
+
+## taking it as a factor
+
+df$Sector <- factor(df$Sector)
+
+## unionmme
+
+datasummary( eph*factor(unionmme) ~ N + Percent() + Mean, data = df )
+
+## converting to factor
+
+df$unionmme <- factor(df$unionmme)
+
+## unioncov
+## dropping it as it has 130 NA's 
+
+df <- df %>% 
+  select(-c(unioncov))
+
+
+# lfsr94 
+
+datasummary( eph*factor(lfsr94) ~ N + Percent() + Mean, data = df ) 
+
+## no major difference between both the categories so decided to drop
+## the variable
+
+df <- df %>% 
+  select(-c(lfsr94))
+
+## prcitship
+
+datasummary( eph*factor(prcitshp) ~ N + Percent() + Mean, data = df ) 
+
+## assigning dummy values to the variable
+
+df <- df[prcitshp=="Native, Born Abroad Of US Parent(s)"|prcitshp=="Native, Born in PR or US Outlying Area"|prcitshp=="Native, Born In US",origin := "Native"]
+df <- df[prcitshp=="Foreign Born, Not a US Citizen"|prcitshp=="Foreign Born, US Cit By Naturalization",origin := "Foreign "]
+
+## converting to factor
+
+df$origin <- factor(df$origin)
+
+## dropping the prcitshp variable
+
+df <- df %>% 
+  select(-c(prcitshp))
+
+## occ2012 
+
+## dropping it as its the occupation selected
+
+df <- df %>% 
+  select(-c(occ2012))
+
+## dropping state column as already accounted for in region
+
+df <- df %>% 
+  select(-c(state))
+
+## dropping earnwke and uhours as already accounted for in eph
+
+df <- df %>% 
+  select(-c(earnwke,uhours))
+```
+## Deciding for the interaction terms
+Before we move forward with our models, we have to check for the interaction terms between different variables. All the variables were checked for the interaction terms. For the purpose of this exercise, all the variables with atleast 2 dollars difference in the horly wages was accounted for in the interaction terms. Furthermore, the interaction terms with a minimum of 5 dollars difference in the hourly wages were considered to be significant and hence were included in the model 3. Interaction terms with less than 5 dollar difference were included in model 4. The individual plots for all interactions tested can be seen in (Exhibit 2).
+```{r,echo=FALSE, include=FALSE}
+############################################
+## Checking for the interaction terms ##
+###########################################
+
+# race and sex with eph
+
+datasummary( eph*factor(race)*sex ~ N + Percent() + Mean, data = df ) 
+
+## For the sake of this assignment minimum difference of 2$ in hourly wage
+## would be considered for interaction terms
+
+# Boxplot
+
+figure3 <- race_sex <- ggplot(df, aes(x = factor(race), y = eph,
+                           fill = factor(sex), color=factor(sex))) +
+  geom_boxplot(alpha=0.8, na.rm=T, outlier.shape = NA, width = 0.8) +
+  stat_boxplot(geom = "errorbar", width = 0.8, size = 0.3, na.rm=T)+
+  scale_color_manual(name="",
+                     values=c('red','blue')) +
+  scale_fill_manual(name="",
+                    values=c('red','blue')) +
+  labs(x = "Race",y = "Wage per Hour (USD)")+
+  scale_y_continuous(expand = c(0.01,0.01), limits=c(0, 70), breaks = seq(0,70, 10))+
+  ggthemes::theme_economist() +
+  theme(legend.position = c(0.15,0.85), axis.text.x = element_text(angle=45, vjust=.5))
+
+# education and sex with eph
+
+datasummary( eph*factor(education)*sex ~ N + Percent() + Mean, data = df )
+
+## wage is different based on education and gender
+
+## Boxplot##
+
+figure4 <- education_sex <- ggplot(df, aes(x = factor(education), y = eph,
+                                fill = factor(sex), color=factor(sex))) +
+  geom_boxplot(alpha=0.8, na.rm=T, outlier.shape = NA, width = 0.8) +
+  stat_boxplot(geom = "errorbar", width = 0.8, size = 0.3, na.rm=T)+
+  scale_color_manual(name="",
+                     values=c('red','blue')) +
+  scale_fill_manual(name="",
+                    values=c('red','blue')) +
+  labs(x = "Education",y = "Wage per Hour (USD)")+
+  scale_y_continuous(expand = c(0.01,0.01), limits=c(0, 70), breaks = seq(0,70, 10))+
+  ggthemes::theme_economist() +
+  theme(legend.position = c(0.15,0.85), axis.text.x = element_text(angle=45, vjust=.5))
+
+# marital status and sex with wage
+
+datasummary( eph*marital*sex ~ N + Percent() + Mean, data = df )
+
+## Boxplot##
+
+figure5 <- marital_sex <- ggplot(df, aes(x = factor(marital), y = eph,
+                              fill = factor(sex), color=factor(sex))) +
+  geom_boxplot(alpha=0.8, na.rm=T, outlier.shape = NA, width = 0.8) +
+  stat_boxplot(geom = "errorbar", width = 0.8, size = 0.3, na.rm=T)+
+  scale_color_manual(name="",
+                     values=c('red','blue')) +
+  scale_fill_manual(name="",
+                    values=c('red','blue')) +
+  labs(x = "Married status",y = "Wage per Hour (USD)")+
+  scale_y_continuous(expand = c(0.01,0.01), limits=c(0, 70), breaks = seq(0,70, 10))+
+  ggthemes::theme_economist() +
+  theme(legend.position = c(0.15,0.85), axis.text.x = element_text(angle=45, vjust=.5))
+
+# sector and sex with wage
+
+datasummary( eph*Sector*sex ~ N + Percent() + Mean, data = df )
+
+## wages are different based on sector and sex
+
+## Boxplot##
+
+figure6 <- Sector_sex <- ggplot(df, aes(x = factor(Sector), y = eph,
+                             fill = factor(sex), color=factor(sex))) +
+  geom_boxplot(alpha=0.8, na.rm=T, outlier.shape = NA, width = 0.8) +
+  stat_boxplot(geom = "errorbar", width = 0.8, size = 0.3, na.rm=T)+
+  scale_color_manual(name="",
+                     values=c('red','blue')) +
+  scale_fill_manual(name="",
+                    values=c('red','blue')) +
+  labs(x = "Sector",y = "Wage per Hour (USD)")+
+  scale_y_continuous(expand = c(0.01,0.01), limits=c(0, 70), breaks = seq(0,70, 10))+
+  ggthemes::theme_economist() +
+  theme(legend.position = c(0.15,0.85), axis.text.x = element_text(angle=45, vjust=.5))
+
+## unionmme and gender with wage
+
+datasummary( eph*unionmme*sex ~ N + Percent() + Mean, data = df )
+
+## Boxplot
+
+figure7 <- Union_sex <- ggplot(df, aes(x = factor(unionmme), y = eph,
+                               fill = factor(sex), color=factor(sex))) +
+  geom_boxplot(alpha=0.8, na.rm=T, outlier.shape = NA, width = 0.8) +
+  stat_boxplot(geom = "errorbar", width = 0.8, size = 0.3, na.rm=T)+
+  scale_color_manual(name="",
+                     values=c('red','blue')) +
+  scale_fill_manual(name="",
+                    values=c('red','blue')) +
+  labs(x = "Union Membership",y = "Wage per Hour (USD)")+
+  scale_y_continuous(expand = c(0.01,0.01), limits=c(0, 70), breaks = seq(0,70, 10))+
+  ggthemes::theme_economist() +
+  theme(legend.position = c(0.15,0.85), axis.text.x = element_text(angle=45, vjust=.5))
+
+## unionme and sector with wage
+
+datasummary( eph*unionmme*Sector ~ N + Percent() + Mean, data = df )
+
+## Boxplot
+
+figure8 <- Union_Sector <- ggplot(df, aes(x = factor(unionmme), y = eph,
+                               fill = factor(Sector), color=factor(Sector))) +
+  geom_boxplot(alpha=0.8, na.rm=T, outlier.shape = NA, width = 0.8) +
+  stat_boxplot(geom = "errorbar", width = 0.8, size = 0.3, na.rm=T)+
+  scale_color_manual(name="",
+                     values=c('red','blue')) +
+  scale_fill_manual(name="",
+                    values=c('red','blue')) +
+  labs(x = "Union Membership",y = "Wage per Hour (USD)")+
+  scale_y_continuous(expand = c(0.01,0.01), limits=c(0, 70), breaks = seq(0,70, 10))+
+  ggthemes::theme_economist() +
+  theme(legend.position = c(0.15,0.85), axis.text.x = element_text(angle=45, vjust=.5))
+
+## origin and sector with wage
+
+datasummary( eph*origin*Sector ~ N + Percent() + Mean, data = df )
+
+## wages are different based on origin and sector
+
+figure9 <- origin_sector <- ggplot(df, aes(x = factor(origin), y = eph,
+                                fill = factor(Sector), color=factor(Sector))) +
+  geom_boxplot(alpha=0.8, na.rm=T, outlier.shape = NA, width = 0.8) +
+  stat_boxplot(geom = "errorbar", width = 0.8, size = 0.3, na.rm=T)+
+  scale_color_manual(name="",
+                     values=c('red','blue')) +
+  scale_fill_manual(name="",
+                    values=c('red','blue')) +
+  labs(x = "Origin",y = "Wage per Hour (USD)")+
+  scale_y_continuous(expand = c(0.01,0.01), limits=c(0, 70), breaks = seq(0,70, 10))+
+  ggthemes::theme_economist() +
+  theme(legend.position = c(0.15,0.85), axis.text.x = element_text(angle=45, vjust=.5))
+
+## sector and region with wage
+
+datasummary(eph*Sector*region ~ N + Percent() + Mean, data = df)
+
+## wages are different based on region and sector
+
+## Boxplot##
+
+figure10 <- Sector_Region<- ggplot(df, aes(x = factor(region), y = eph,
+                               fill = factor(Sector), color=factor(Sector))) +
+  geom_boxplot(alpha=0.8, na.rm=T, outlier.shape = NA, width = 0.8) +
+  stat_boxplot(geom = "errorbar", width = 0.8, size = 0.3, na.rm=T)+
+  scale_color_manual(name="",
+                     values=c('red','blue')) +
+  scale_fill_manual(name="",
+                    values=c('red','blue')) +
+  labs(x = "Region",y = "Wage per Hour (USD)")+
+  scale_y_continuous(expand = c(0.01,0.01), limits=c(0, 70), breaks = seq(0,70, 10))+
+  ggthemes::theme_economist() +
+  theme(legend.position = c(0.15,0.85), axis.text.x = element_text(angle=45, vjust=.5))
+
+## race and marital status with wages
+
+datasummary(eph*factor(race)*factor(marital)  ~ N + Percent() + Mean, data = df )
+
+## Boxplot
+
+figure11 <- race_marital<- ggplot(df, aes(x = factor(marital), y = eph,
+                              fill = factor(race), color=factor(race))) +
+  geom_boxplot(alpha=0.8, na.rm=T, outlier.shape = NA, width = 0.8) +
+  stat_boxplot(geom = "errorbar", width = 0.8, size = 0.3, na.rm=T)+
+  scale_color_manual(name="",
+                     values=c('red','blue')) +
+  scale_fill_manual(name="",
+                    values=c('red','blue')) +
+  labs(x = "Marriage Status",y = "Wage per Hour (USD)")+
+  scale_y_continuous(expand = c(0.01,0.01), limits=c(0, 70), breaks = seq(0,70, 10))+
+  ggthemes::theme_economist() +
+  theme(legend.position = c(0.15,0.85), axis.text.x = element_text(angle=45, vjust=.5))
+
+
+## education and region with wage
+
+datasummary(eph*factor(education)*region  ~ N + Percent() + Mean, data = df )
+
+## wages are different based on region and education
+
+## origin and education with wages
+
+datasummary(eph*origin*factor(education)  ~ N + Percent() + Mean, data = df) 
+
+## wages are different based on origin and education
+
+## Box plot
+
+figure12 <- education_origin<- ggplot(df, aes(x = factor(education), y = eph,
+                                  fill = factor(origin), color=factor(origin))) +
+  geom_boxplot(alpha=0.8, na.rm=T, outlier.shape = NA, width = 0.8) +
+  stat_boxplot(geom = "errorbar", width = 0.8, size = 0.3, na.rm=T)+
+  scale_color_manual(name="",
+                     values=c('red','blue')) +
+  scale_fill_manual(name="",
+                    values=c('red','blue')) +
+  labs(x = "education",y = "Wage per Hour (USD)")+
+  scale_y_continuous(expand = c(0.01,0.01), limits=c(0, 70), breaks = seq(0,70, 10))+
+  ggthemes::theme_economist() +
+  theme(legend.position = c(0.15,0.85), axis.text.x = element_text(angle=45, vjust=.5))
+
+## children and sex with wages
+
+datasummary(eph*factor(ownchild)*factor(sex) ~ N + Percent() + Mean, data = df )
+
+## as both of the difference was less than 2 it wouldn't be included as an interaction term
+
+## education and race with wage
+
+datasummary(eph*factor(education)*factor(race)  ~ N + Percent() + Mean, data = df )
+
+## the interactions which have a minimum 5$ difference based on any variable
+## will be included in the model 3 while all will be included in model 4
+```
+## Model setting up
+I started off with the simplest model which was between hourly wage and level of education. The second model further took into account the age and age squared variable. The model 3 further included all the major interactions identified earlier. While the final model included all the variables and the interactions.
+```{r,echo=FALSE, include=FALSE}
+#####################################
+## setting up the regression models##
+#####################################
+
+model1 <- as.formula(eph ~ education)
+model2 <- as.formula(eph ~ education + age + agesq)
+model3 <- as.formula(eph ~ education + age + agesq + sex + unionmme + race + origin + Sector + region + ownchild +
+                       education*sex + unionmme*sex + education*race + origin*Sector + Sector+region + education*region +
+                     origin*education)
+model4 <- as.formula(eph ~ education + age + agesq + sex + unionmme + race + origin + Sector + region + ownchild +
+                       marital + industry + race*sex + education*sex + marital*sex + Sector*sex + origin*Sector +
+                       Sector*region + race*marital + education*region + origin*education + unionmme*sex + unionmme*Sector +
+                       education*race)
+
+
+## running the regression models ##
+
+reg1 <- feols(model1, data = df, vcov = "hetero")
+reg2 <- feols(model2, data = df, vcov = "hetero")
+reg3 <- feols(model3, data = df, vcov = "hetero")
+reg4 <- feols(model4, data = df, vcov = "hetero")
+
+# evaluation of the models: using all the sample#
+
+fitstat_register("k", function(x){length( x$coefficients ) - 1}, "No. Variables") 
+
+figure14 <- etable( reg1 , reg2 , reg3 , reg4 , fitstat = c('aic','bic','rmse','r2','n','k'), keepFactors = TRUE )
+
+figure16 <- etable( reg1 , reg2 , reg3 , reg4 , fitstat = c('aic','bic','rmse','r2','n','k'), keepFactors = TRUE )
+
+reg_stats <- setDF(figure16)
+
+models <- c("Model 1", "Model 2", "Model 3", "Model 4")
+rmse <- c(reg_stats$reg1[63], reg_stats$reg2[63], reg_stats$reg3[63] ,reg_stats$reg4[63])
+bic <- c(reg_stats$reg1[62], reg_stats$reg2[62], reg_stats$reg3[62] ,reg_stats$reg4[62])
+vars <- c(reg_stats$reg1[66], reg_stats$reg2[66], reg_stats$reg3[66] ,reg_stats$reg4[66])
+
+reg_results_table <- data.frame(models, bic, rmse, vars)
+
+colnames(reg_results_table)<- c("Model", "BIC", "RMSE","No. of coeff")
+
+reg_results_table <- reg_results_table %>% mutate_if(is.numeric, format) %>% 
+  kable( caption = "Model evaluation based on full sample RMSE and BIC") %>%
+  kable_styling(full_width = F, font_size = 10)
+
+#####################
+# Cross-validation for better evaluation of predictive performance
+# Simple k-fold cross validation setup:
+# 1) Used method for estimating the model: "lm" - linear model (y_hat = b0+b1*x1+b2*x2 + ...)
+# 2) set number of folds to use (must be less than the no. observations)
+
+k <- 4
+
+# We use the 'train' function which allows many type of model training -> use cross-validation
+
+set.seed(125)
+
+cv1 <- train(model1, df, method = "lm", trControl = trainControl(method = "cv", number = k))
+
+# Check the output:
+
+cv1
+summary(cv1)
+
+cv1$results
+cv1$resample
+
+set.seed(125)
+cv2 <- train(model2, df, method = "lm", trControl = trainControl(method = "cv", number = k))
+
+set.seed(125)
+cv3 <- train(model3, df, method = "lm", trControl = trainControl(method = "cv", number = k), na.action = "na.omit")
+
+set.seed(125)
+cv4 <- train(model4, df, method = "lm", trControl = trainControl(method = "cv", number = k), na.action = "na.omit")
+
+# Calculate RMSE for each fold and the average RMSE as well
+
+cv <- c("cv1", "cv2", "cv3", "cv4")
+rmse_cv <- c()
+for(i in 1:length(cv)){
+  rmse_cv[i] <- sqrt((get(cv[i])$resample[[1]][1]^2 +
+                        get(cv[i])$resample[[1]][2]^2 +
+                        get(cv[i])$resample[[1]][3]^2 +
+                        get(cv[i])$resample[[1]][4]^2)/4)
+}
+# summarize results
+
+cv_mat <- data.frame(rbind(cv1$resample[4], "Average"),
+                     rbind(cv1$resample[1], rmse_cv[1]),
+                     rbind(cv2$resample[1], rmse_cv[2]),
+                     rbind(cv3$resample[1], rmse_cv[3]),
+                     rbind(cv4$resample[1], rmse_cv[4])
+)
+colnames(cv_mat)<-c("Resample","Model1", "Model2", "Model3", "Model4")
+cv_mat 
+
+# Show model complexity and out-of-sample RMSE performance
+
+m_comp <- c()
+models <- c("reg1", "reg2", "reg3", "reg4")
+for( i in 1 : length(cv) ){
+  m_comp[ i ] <- length( get( models[i] )$coefficient  - 1 ) 
+}
+m_comp <- tibble( model = models , 
+                  complexity = m_comp,
+                  RMSE = rmse_cv )
+figure13 <- ggplot( m_comp , aes( x = complexity , y = RMSE ) ) +
+  geom_point(color='red',size=2) +
+  geom_line(color='blue',size=0.5)+
+  labs(x='Number of explanatory variables',y='Averaged RMSE on test samples',
+       title='Prediction performance and model compexity') +
+  ggthemes::theme_economist()
+
+# plotting results
+
+figure15 <- ggplot(df, aes(x=predict(reg2, df), y=eph)) + 
+  geom_point(alpha = 0.5) +
+  geom_abline(intercept = 0, slope = 1, size = 0.5) +
+  scale_x_continuous(limits = c(0,40)) + 
+  scale_y_continuous(limits = c(0,60)) +
+  ggthemes::theme_economist()
+
+```
+## Analysis based on the models
+The results from the regression shows that model 4 has the lowest RMSE of 11.807. This when compared to model 3 is lower by 0.15. This may suggest that model maybe over-fitting, results of regression can be seen in ( Exhibit 6). If we take into consideration the cross-validated RMSE, we can see that model 2 has the lowest CV-RMSE ( Exhibit 5 ). Model 3 & 4 has CV-RMSE higher by almost 0.4. Finally, if we compare BIC of different models we can see that model 2 has lowest BIC. Higher BIC for the remaining models suggest that they're being penalized for model complexity. The relationship between number of variables and Average RMSE can be seen in the (Exhibit 3). To sum it up, the selection of model is dependent on various factors, lower RMSE, CV-RMSE, and BIC are part of the criteria but we should also take into consideration the complexity of the model as well. Although model 4 had the lowest RMSE but it was fairly more complex when compared to other models in terms of number of variables. My selection would be *Model 2* as it is a fairly simple model when compared to others and also help us to avoid over fitting the live data 
+(Exhibit 4).
+
+## Appendix
+
+## Exhibit 1
+```{r, echo=FALSE, warning=FALSE, fig.width=8, fig.height = 4, fig.align="center", message=FALSE}
+figure2
+```
+
+## Exhibit 2
+
+```{r echo=FALSE, fig.align="center", fig.height=5, fig.width=9, message=FALSE, warning=FALSE}
+grid.arrange(figure3, figure4,
+             ncol = 2, nrow = 1)
+
+```
+
+```{r echo=FALSE, fig.align="center", fig.height=5, fig.width=9, message=FALSE, warning=FALSE}
+grid.arrange(figure5, figure6,
+             ncol = 2, nrow = 1)
+
+```
+
+```{r echo=FALSE, fig.align="center", fig.height=5, fig.width=9, message=FALSE, warning=FALSE}
+grid.arrange(figure7, figure8,
+             ncol = 2, nrow = 1)
+
+```
+
+```{r echo=FALSE, fig.align="center", fig.height=5, fig.width=9, message=FALSE, warning=FALSE}
+grid.arrange(figure9, figure10,
+             ncol = 2, nrow = 1)
+
+```
+
+```{r echo=FALSE, fig.align="center", fig.height=5, fig.width=9, message=FALSE, warning=FALSE}
+grid.arrange(figure11, figure12,
+             ncol = 2, nrow = 1)
+
+```
+
+## Exhibit 3
+```{r, echo=FALSE, warning=FALSE, fig.width=8, fig.height = 4, fig.align="center"}
+figure13
+```
+
+## Exhibit 4
+```{r, echo=FALSE, warning=FALSE, fig.width=8, fig.height = 4, fig.align="center"}
+figure15
+```
+
+## Exhibit 5
+```{r, echo=FALSE, warning=FALSE, fig.width=8, fig.height = 4, fig.align="center"}
+cv_mat
+```
+
+## Exhibit 6
+```{r, echo=FALSE, warning=FALSE, message=FALSE, fig.align="center"}
+reg_results_table
+```
+
+
