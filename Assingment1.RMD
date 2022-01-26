@@ -379,7 +379,7 @@ figure3 <- race_sex <- ggplot(df, aes(x = factor(race), y = eph,
   scale_fill_manual(name="",
                     values=c('red','blue')) +
   labs(x = "Race",y = "Wage per Hour (USD)")+
-  scale_y_continuous(expand = c(0.01,0.01), limits=c(0, 70), breaks = seq(0,70, 10))+
+  scale_y_continuous(expand = c(0.01,0.01), limits=c(0, 100), breaks = seq(0,100, 10))+
   ggthemes::theme_economist() +
   theme(legend.position = c(0.15,0.85), axis.text.x = element_text(angle=45, vjust=.5))
 
@@ -400,7 +400,7 @@ figure4 <- education_sex <- ggplot(df, aes(x = factor(education), y = eph,
   scale_fill_manual(name="",
                     values=c('red','blue')) +
   labs(x = "Education",y = "Wage per Hour (USD)")+
-  scale_y_continuous(expand = c(0.01,0.01), limits=c(0, 70), breaks = seq(0,70, 10))+
+  scale_y_continuous(expand = c(0.01,0.01), limits=c(0, 100), breaks = seq(0,100, 10))+
   ggthemes::theme_economist() +
   theme(legend.position = c(0.15,0.85), axis.text.x = element_text(angle=45, vjust=.5))
 
@@ -419,7 +419,7 @@ figure5 <- marital_sex <- ggplot(df, aes(x = factor(marital), y = eph,
   scale_fill_manual(name="",
                     values=c('red','blue')) +
   labs(x = "Married status",y = "Wage per Hour (USD)")+
-  scale_y_continuous(expand = c(0.01,0.01), limits=c(0, 70), breaks = seq(0,70, 10))+
+  scale_y_continuous(expand = c(0.01,0.01), limits=c(0, 100), breaks = seq(0,100, 10))+
   ggthemes::theme_economist() +
   theme(legend.position = c(0.15,0.85), axis.text.x = element_text(angle=45, vjust=.5))
 
@@ -440,7 +440,7 @@ figure6 <- Sector_sex <- ggplot(df, aes(x = factor(Sector), y = eph,
   scale_fill_manual(name="",
                     values=c('red','blue')) +
   labs(x = "Sector",y = "Wage per Hour (USD)")+
-  scale_y_continuous(expand = c(0.01,0.01), limits=c(0, 70), breaks = seq(0,70, 10))+
+  scale_y_continuous(expand = c(0.01,0.01), limits=c(0, 100), breaks = seq(0,100, 10))+
   ggthemes::theme_economist() +
   theme(legend.position = c(0.15,0.85), axis.text.x = element_text(angle=45, vjust=.5))
 
@@ -459,7 +459,7 @@ figure7 <- Union_sex <- ggplot(df, aes(x = factor(unionmme), y = eph,
   scale_fill_manual(name="",
                     values=c('red','blue')) +
   labs(x = "Union Membership",y = "Wage per Hour (USD)")+
-  scale_y_continuous(expand = c(0.01,0.01), limits=c(0, 70), breaks = seq(0,70, 10))+
+  scale_y_continuous(expand = c(0.01,0.01), limits=c(0, 100), breaks = seq(0,100, 10))+
   ggthemes::theme_economist() +
   theme(legend.position = c(0.15,0.85), axis.text.x = element_text(angle=45, vjust=.5))
 
@@ -478,7 +478,7 @@ figure8 <- Union_Sector <- ggplot(df, aes(x = factor(unionmme), y = eph,
   scale_fill_manual(name="",
                     values=c('red','blue')) +
   labs(x = "Union Membership",y = "Wage per Hour (USD)")+
-  scale_y_continuous(expand = c(0.01,0.01), limits=c(0, 70), breaks = seq(0,70, 10))+
+  scale_y_continuous(expand = c(0.01,0.01), limits=c(0, 100), breaks = seq(0,100, 10))+
   ggthemes::theme_economist() +
   theme(legend.position = c(0.15,0.85), axis.text.x = element_text(angle=45, vjust=.5))
 
@@ -497,7 +497,7 @@ figure9 <- origin_sector <- ggplot(df, aes(x = factor(origin), y = eph,
   scale_fill_manual(name="",
                     values=c('red','blue')) +
   labs(x = "Origin",y = "Wage per Hour (USD)")+
-  scale_y_continuous(expand = c(0.01,0.01), limits=c(0, 70), breaks = seq(0,70, 10))+
+  scale_y_continuous(expand = c(0.01,0.01), limits=c(0, 100), breaks = seq(0,100, 10))+
   ggthemes::theme_economist() +
   theme(legend.position = c(0.15,0.85), axis.text.x = element_text(angle=45, vjust=.5))
 
@@ -518,7 +518,7 @@ figure10 <- Sector_Region<- ggplot(df, aes(x = factor(region), y = eph,
   scale_fill_manual(name="",
                     values=c('red','blue')) +
   labs(x = "Region",y = "Wage per Hour (USD)")+
-  scale_y_continuous(expand = c(0.01,0.01), limits=c(0, 70), breaks = seq(0,70, 10))+
+  scale_y_continuous(expand = c(0.01,0.01), limits=c(0, 100), breaks = seq(0,100, 10))+
   ggthemes::theme_economist() +
   theme(legend.position = c(0.15,0.85), axis.text.x = element_text(angle=45, vjust=.5))
 
@@ -537,7 +537,7 @@ figure11 <- race_marital<- ggplot(df, aes(x = factor(marital), y = eph,
   scale_fill_manual(name="",
                     values=c('red','blue')) +
   labs(x = "Marriage Status",y = "Wage per Hour (USD)")+
-  scale_y_continuous(expand = c(0.01,0.01), limits=c(0, 70), breaks = seq(0,70, 10))+
+  scale_y_continuous(expand = c(0.01,0.01), limits=c(0, 100), breaks = seq(0,100, 10))+
   ggthemes::theme_economist() +
   theme(legend.position = c(0.15,0.85), axis.text.x = element_text(angle=45, vjust=.5))
 
@@ -565,7 +565,7 @@ figure12 <- education_origin<- ggplot(df, aes(x = factor(education), y = eph,
   scale_fill_manual(name="",
                     values=c('red','blue')) +
   labs(x = "education",y = "Wage per Hour (USD)")+
-  scale_y_continuous(expand = c(0.01,0.01), limits=c(0, 70), breaks = seq(0,70, 10))+
+  scale_y_continuous(expand = c(0.01,0.01), limits=c(0, 100), breaks = seq(0,100, 10))+
   ggthemes::theme_economist() +
   theme(legend.position = c(0.15,0.85), axis.text.x = element_text(angle=45, vjust=.5))
 
@@ -771,5 +771,3 @@ cv_mat
 ```{r, echo=FALSE, warning=FALSE, message=FALSE, fig.align="center"}
 reg_results_table
 ```
-
-
