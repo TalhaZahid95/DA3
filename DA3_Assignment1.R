@@ -11,6 +11,7 @@ library(glmnet)
 library(cowplot)
 library(modelsummary)
 library(fixest)
+library(prettydoc)
 library(data.table)
 
 data <- read_csv("https://osf.io/4ay9x/download")
